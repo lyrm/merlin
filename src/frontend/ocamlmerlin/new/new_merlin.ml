@@ -110,7 +110,10 @@ let run =
             ();
           File_id.with_cache @@ fun () ->
           let source = Msource.make (Misc.string_of_file stdin) in
-          let pipeline = Mpipeline.make config source in
+          let state = Mpipeline.Cache.get config in
+          let pipeline =
+            Mocaml.with_state state (fun () -> Mpipeline.make config source)
+          in
           let json =
             let class_, message =
               Printexc.record_backtrace true;

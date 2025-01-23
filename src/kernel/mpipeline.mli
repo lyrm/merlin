@@ -27,3 +27,7 @@ val typer_errors : t -> exn list
 
 val timing_information : t -> (string * float) list
 val cache_information : t -> Std.json
+
+module Cache : sig
+  val get : Mconfig.t -> Mocaml.typer_state
+end
