@@ -64,7 +64,11 @@ module Cache = struct
 end
 
 module Typer = struct
-  type t = { errors : exn list; result : Mtyper.result }
+  type t =
+    { errors : exn list;
+      result : Mtyper.result;
+      cache_stat : Mtyper.typer_cache_stats
+    }
 end
 
 module Ppx = struct
@@ -92,7 +96,7 @@ type t =
     error_time : float ref;
     ppx_cache_hit : bool ref;
     reader_cache_hit : bool ref;
-    typer_cache_stats : Mtyper.typer_cache_stats ref
+    typer_cache_stats : Mtyper.typer_cache_stats
   }
 
 let raw_source t = t.raw_source
@@ -230,9 +234,8 @@ type shared =
 
 let process ?position ?state ?(pp_time = ref 0.0) ?(reader_time = ref 0.0)
     ?(ppx_time = ref 0.0) ?(typer_time = ref 0.0) ?(error_time = ref 0.0)
-    ?(ppx_cache_hit = ref false) ?(reader_cache_hit = ref false)
-    ?(typer_cache_stats = ref Mtyper.Miss) ?for_completion config raw_source
-    shared =
+    ?(ppx_cache_hit = ref false) ?(reader_cache_hit = ref false) ?for_completion
+    config raw_source shared =
   let state =
     match state with
     | None -> Cache.get config
@@ -303,10 +306,9 @@ let process ?position ?state ?(pp_time = ref 0.0) ?(reader_time = ref 0.0)
         ppx_cache_hit := cache_was_hit;
         { Ppx.config; parsetree; errors = !caught })
   in
-  let cache_and_return_typer result =
+  let save_stats_and_return_typer result =
     let errors = timed error_time (fun () -> Mtyper.get_errors result) in
-    typer_cache_stats := Mtyper.get_cache_stat result;
-    { Typer.errors; result }
+    { Typer.errors; result; cache_stat = Mtyper.get_cache_stat result }
   in
 
   let typer_has_been_shared = ref false in
@@ -321,11 +323,11 @@ let process ?position ?state ?(pp_time = ref 0.0) ?(reader_time = ref 0.0)
                 (make_partial ?position shared.msg shared.result)
                 parsetree)
           in
-          cache_and_return_typer result)
+          save_stats_and_return_typer result)
     with
     | res -> res
     | effect Mtyper.(Partial result), k ->
-      let typer = cache_and_return_typer result in
+      let typer = save_stats_and_return_typer result in
       let mpipeline =
         { config;
           state;
@@ -341,7 +343,7 @@ let process ?position ?state ?(pp_time = ref 0.0) ?(reader_time = ref 0.0)
           error_time;
           ppx_cache_hit;
           reader_cache_hit;
-          typer_cache_stats
+          typer_cache_stats = typer.cache_stat
         }
       in
       Shared.locking_set shared.partial (Some mpipeline);
@@ -369,7 +371,7 @@ let process ?position ?state ?(pp_time = ref 0.0) ?(reader_time = ref 0.0)
         error_time;
         ppx_cache_hit;
         reader_cache_hit;
-        typer_cache_stats
+        typer_cache_stats = typer.cache_stat
       }
 
 let make ?position config source shared =
@@ -399,7 +401,7 @@ let timing_information t =
 
 let cache_information pipeline =
   let typer =
-    match !(pipeline.typer_cache_stats) with
+    match pipeline.typer_cache_stats with
     | Miss -> `String "miss"
     | Hit { reused; typed } ->
       `Assoc [ ("reused", `Int reused); ("typed", `Int typed) ]
