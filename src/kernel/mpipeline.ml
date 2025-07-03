@@ -306,12 +306,14 @@ let process ?position ?state ?(pp_time = ref 0.0) ?(reader_time = ref 0.0)
         ppx_cache_hit := cache_was_hit;
         { Ppx.config; parsetree; errors = !caught })
   in
+
+  (* TODO : pattern matching on position to past a partial result if typing is not needed *)
   let save_stats_and_return_typer result =
     let errors = timed error_time (fun () -> Mtyper.get_errors result) in
     { Typer.errors; result; cache_stat = Mtyper.get_cache_stat result }
   in
-
   let typer_has_been_shared = ref false in
+
   let typer =
     match
       timed typer_time (fun () ->
@@ -422,19 +424,7 @@ let cache_information pipeline =
       ("cmi", cmi)
     ]
 
-(* Represents the different possible communications between the two domains: 
-  + From Main to Typer :
-    - request is canceled
-    - merlin is closing
-    - main domain is waiting for the lock
-
-  + From Typer to Main :
-    - caught an exception 
-*)
-(* TODO : For message passing, it seems okay to have active waiting but it could be interesting to test both.
-*)
-
-(** [closing]: called by the main domain *)
+(** [close_typer]: called by the main domain *)
 let close_typer shared =
   Domain_msg.send_msg shared.msg.from_main `Closing shared.config
 
@@ -484,6 +474,7 @@ let get ?position shared config source =
 
   let rec loop () =
     let critical_section () =
+      (* The critical section runs under the protection of the mutex of shared.partial. *)
       match Shared.get shared.partial with
       | None -> begin
         match Atomic.get shared.msg.from_typer with
