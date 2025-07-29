@@ -379,20 +379,6 @@ let process ?position ?state ?(pp_time = ref 0.0) ?(reader_time = ref 0.0)
 let make ?position config source shared =
   process ?position (Mconfig.normalize config) source shared
 
-(* let for_completion position
-    { config;
-      state;
-      raw_source;
-      pp_time;
-      reader_time;
-      ppx_time;
-      typer_time;
-      error_time;
-      _
-    } =
-  process config raw_source ~for_completion:position ~state ~pp_time
-    ~reader_time ~ppx_time ~typer_time ~error_time *)
-
 let timing_information t =
   [ ("pp", !(t.pp_time));
     ("reader", !(t.reader_time));
@@ -432,8 +418,8 @@ let close_typer shared =
 let share_exn shared exn =
   Domain_msg.send_msg shared.msg.from_typer (`Exn exn) shared.partial
 
-(** [cancel]: called by the main domain *)
-let _cancel shared =
+(** [cancel_typer]: called by the main domain *)
+let cancel_typer shared =
   Domain_msg.send_msg shared.msg.from_main `Cancel shared.config
 
 let domain_typer shared () =
@@ -465,6 +451,7 @@ let domain_typer shared () =
           (* An exception has happened after sharing partial result: we can dump it *)
           ()
         | exn -> share_exn shared exn);
+
         loop ())
   in
   Shared.protect shared.config (fun () -> loop ())

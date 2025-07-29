@@ -48,6 +48,7 @@ end
 
 val create_shared : unit -> shared
 val close_typer : shared -> unit
+val cancel_typer : shared -> unit
 val share_exn : shared -> exn -> unit
 
 val domain_typer : shared -> unit -> unit
