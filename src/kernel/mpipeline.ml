@@ -401,7 +401,9 @@ let share_exn shared exn =
   Domain_msg.(Shared.put_ack shared.msg (Msg (`Exn exn)))
 
 (** [cancel_typer]: called by the main domain *)
-let cancel_typer shared = Domain_msg.(Shared.put_ack shared.msg (Msg `Cancel))
+let cancel_typer shared =
+  try Domain_msg.(Shared.unsafe_put_ack shared.msg (Msg `Cancel))
+  with _ -> failwith "cancel_typer: could not put cancel message"
 
 let domain_typer shared () =
   let rec loop () =
@@ -431,9 +433,10 @@ let domain_typer shared () =
   loop ()
 
 let get ?position shared config source =
-  Domain_msg.(Shared.put_ack shared.msg (Config (config, source, position)));
+  Domain_msg.(
+    Shared.unsafe_put_ack shared.msg (Config (config, source, position)));
 
-  match Shared.take shared.msg with
+  match Shared.unsafe_take shared.msg with
   | Result pipeline -> pipeline
   | Msg (`Exn exn) -> raise exn
   | _ -> failwith "Unexpected message"

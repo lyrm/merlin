@@ -49,160 +49,160 @@ let commands_help () =
 
 let old_store = ref None
 
-let run shared =
+let run =
   let query_num = ref (-1) in
-  function
-  | [] ->
-    usage ();
-    1
-  | "-version" :: _ ->
-    Printf.printf "The Merlin toolkit version %s, for Ocaml %s\n"
-      Merlin_config.version Sys.ocaml_version;
-    0
-  | "-vnum" :: _ ->
-    Printf.printf "%s\n" Merlin_config.version;
-    0
-  | "-warn-help" :: _ ->
-    Warnings.help_warnings ();
-    0
-  | "-flags-help" :: _ ->
-    Mconfig.document_arguments stdout;
-    0
-  | "-commands-help" :: _ ->
-    commands_help ();
-    0
-  | query :: raw_args -> (
-    incr query_num;
-    match New_commands.find_command query New_commands.all_commands with
-    | exception Not_found ->
-      prerr_endline ("Unknown command " ^ query ^ ".\n");
+  fun shared -> function
+    | [] ->
       usage ();
       1
-    | New_commands.Command (_name, _doc, spec, command_args, command_action)
-      -> (
-      (* Setup notifications *)
-      let notifications = ref [] in
-      Logger.with_notifications notifications @@ fun () ->
-      (* Parse commandline *)
-      match
-        begin
-          let start_cpu = Misc.time_spent () in
-          let start_clock = Unix.gettimeofday () *. 1000. in
-          let config, command_args =
-            let fails = ref [] in
-            let config, command_args =
-              Mconfig.parse_arguments ~wd:(Sys.getcwd ())
-                ~warning:(fun w -> fails := w :: !fails)
-                (List.map snd spec) raw_args Mconfig.initial command_args
-            in
-            let config =
-              let failures = !fails @ config.merlin.failures in
-              Mconfig.{ config with merlin = { config.merlin with failures } }
-            in
-            (config, command_args)
-          in
-
-          (* Temporary fix for data races with Local_store.close_store:
+    | "-version" :: _ ->
+      Printf.printf "The Merlin toolkit version %s, for Ocaml %s\n"
+        Merlin_config.version Sys.ocaml_version;
+      0
+    | "-vnum" :: _ ->
+      Printf.printf "%s\n" Merlin_config.version;
+      0
+    | "-warn-help" :: _ ->
+      Warnings.help_warnings ();
+      0
+    | "-flags-help" :: _ ->
+      Mconfig.document_arguments stdout;
+      0
+    | "-commands-help" :: _ ->
+      commands_help ();
+      0
+    | query :: raw_args -> (
+      incr query_num;
+      match New_commands.find_command query New_commands.all_commands with
+      | exception Not_found ->
+        prerr_endline ("Unknown command " ^ query ^ ".\n");
+        usage ();
+        1
+      | New_commands.Command (_name, _doc, spec, command_args, command_action)
+        -> (
+        Shared.lock shared.Domain_msg.msg;
+        (* Temporary fix for data races with Local_store.close_store:
              - close_store should not be called while the typer is running.
              - To prevent this, when a new command arrives, the main domain always cancels the typer before closing the store.
 
              A better solution would be to cancel the typer only when necessary, i.e., when the buffer has changed significantly, or when the command targets a different buffer.
 
              However, the typer might not be cancelled if its result could still be useful, or if the new command does not require typing. *)
-          (match !old_store with
-          | None -> ()
-          | Some store ->
-            Mpipeline.(
-              (* Shared.set shared.config None; *)
-              cancel_typer shared);
-            Local_store.close_store store);
-
-          (* Start processing query *)
-          Logger.with_log_file
-            Mconfig.(config.merlin.log_file)
-            ~sections:Mconfig.(config.merlin.log_sections)
-          @@ fun () ->
-          Mocaml.flush_caches
-            ~older_than:
-              (float_of_int (60 * Mconfig.(config.merlin.cache_lifespan)))
-            ();
-          File_id.with_cache @@ fun () ->
-          (* TODO: Is it possible to avoid exposing this function in mpipeline.mli and its type in mocaml.mli? *)
-          let store = Mpipeline.Cache.get config in
-          old_store := Some store;
-          Local_store.open_store store;
-          let source = Msource.make (Misc.string_of_file stdin) in
-          let json =
-            let class_, message, pipeline_opt =
-              Printexc.record_backtrace true;
-              match command_action shared config source command_args with
-              | result, pipeline_opt -> ("return", result, pipeline_opt)
-              | exception Failure str ->
-                let trace = Printexc.get_backtrace () in
-                log ~title:"run" "Command error backtrace: %s" trace;
-                ("failure", `String str, None)
-              | exception exn -> (
-                let trace = Printexc.get_backtrace () in
-                log ~title:"run" "Command error backtrace: %s" trace;
-                match Location.error_of_exn exn with
-                | None | Some `Already_displayed ->
-                  ( "exception",
-                    `String (Printexc.to_string exn ^ "\n" ^ trace),
-                    None )
-                | Some (`Ok err) ->
-                  Location.print_main Format.str_formatter err;
-                  ("error", `String (Format.flush_str_formatter ()), None))
-            in
-            let cpu_time = Misc.time_spent () -. start_cpu in
-            let gc_stats = Gc.quick_stat () in
-            let heap_mbytes =
-              gc_stats.heap_words * (Sys.word_size / 8) / 1_000_000
-            in
-            let clock_time = (Unix.gettimeofday () *. 1000.) -. start_clock in
-            let timing =
-              match pipeline_opt with
-              | None -> [] (* TODO *)
-              | Some p -> Mpipeline.timing_information p
-            in
-            let pipeline_time =
-              List.fold_left (fun acc (_, k) -> k +. acc) 0.0 timing
-            in
-            let timing =
-              ("clock", clock_time) :: ("cpu", cpu_time)
-              :: ("query", cpu_time -. pipeline_time)
-              :: timing
-            in
-            let notify { Logger.section; msg } =
-              `String (Printf.sprintf "%s: %s" section msg)
-            in
-            let format_timing (k, v) = (k, `Int (int_of_float (0.5 +. v))) in
-            `Assoc
-              [ ("class", `String class_);
-                ("value", message);
-                ("notifications", `List (List.rev_map notify !notifications));
-                ("timing", `Assoc (List.map format_timing timing));
-                ("heap_mbytes", `Int heap_mbytes);
-                ( "cache",
-                  match pipeline_opt with
-                  | None -> `Assoc [] (* TODO *)
-                  | Some pipeline -> Mpipeline.cache_information pipeline );
-                ("query_num", `Int !query_num)
-              ]
-          in
-
-          log ~title:"run(result)" "%a" Logger.json (fun () -> json);
+        (match !old_store with
+        | None -> ()
+        | Some store ->
+          Mpipeline.cancel_typer shared;
+          Local_store.close_store store);
+        (* Setup notifications *)
+        let notifications = ref [] in
+        Logger.with_notifications notifications @@ fun () ->
+        (* Parse commandline *)
+        match
           begin
-            match Mconfig.(config.merlin.protocol) with
-            | `Sexp -> Sexp.tell_sexp print_string (Sexp.of_json json)
-            | `Json -> Yojson.Basic.to_channel stdout json
-          end;
-          print_newline ()
-        end
-      with
-      | () -> 0
-      | exception exn ->
-        prerr_endline ("Exception: " ^ Printexc.to_string exn);
-        1))
+            let start_cpu = Misc.time_spent () in
+            let start_clock = Unix.gettimeofday () *. 1000. in
+            let config, command_args =
+              let fails = ref [] in
+              let config, command_args =
+                Mconfig.parse_arguments ~wd:(Sys.getcwd ())
+                  ~warning:(fun w -> fails := w :: !fails)
+                  (List.map snd spec) raw_args Mconfig.initial command_args
+              in
+              let config =
+                let failures = !fails @ config.merlin.failures in
+                Mconfig.{ config with merlin = { config.merlin with failures } }
+              in
+              (config, command_args)
+            in
+
+            (* Start processing query *)
+            Logger.with_log_file
+              Mconfig.(config.merlin.log_file)
+              ~sections:Mconfig.(config.merlin.log_sections)
+            @@ fun () ->
+            Mocaml.flush_caches
+              ~older_than:
+                (float_of_int (60 * Mconfig.(config.merlin.cache_lifespan)))
+              ();
+            File_id.with_cache @@ fun () ->
+            (* TODO: Is it possible to avoid exposing this function in mpipeline.mli and its type in mocaml.mli? *)
+            let store = Mpipeline.Cache.get config in
+            old_store := Some store;
+            Local_store.open_store store;
+            let source = Msource.make (Misc.string_of_file stdin) in
+            let json =
+              let class_, message, pipeline_opt =
+                Printexc.record_backtrace true;
+                match command_action shared config source command_args with
+                | result, pipeline_opt -> ("return", result, pipeline_opt)
+                | exception Failure str ->
+                  let trace = Printexc.get_backtrace () in
+                  log ~title:"run" "Command error backtrace: %s" trace;
+                  ("failure", `String str, None)
+                | exception exn -> (
+                  let trace = Printexc.get_backtrace () in
+                  log ~title:"run" "Command error backtrace: %s" trace;
+                  match Location.error_of_exn exn with
+                  | None | Some `Already_displayed ->
+                    ( "exception",
+                      `String (Printexc.to_string exn ^ "\n" ^ trace),
+                      None )
+                  | Some (`Ok err) ->
+                    Location.print_main Format.str_formatter err;
+                    ("error", `String (Format.flush_str_formatter ()), None))
+              in
+              let cpu_time = Misc.time_spent () -. start_cpu in
+              let gc_stats = Gc.quick_stat () in
+              let heap_mbytes =
+                gc_stats.heap_words * (Sys.word_size / 8) / 1_000_000
+              in
+              let clock_time = (Unix.gettimeofday () *. 1000.) -. start_clock in
+              let timing =
+                match pipeline_opt with
+                | None -> [] (* TODO *)
+                | Some p -> Mpipeline.timing_information p
+              in
+              let pipeline_time =
+                List.fold_left (fun acc (_, k) -> k +. acc) 0.0 timing
+              in
+              let timing =
+                ("clock", clock_time) :: ("cpu", cpu_time)
+                :: ("query", cpu_time -. pipeline_time)
+                :: timing
+              in
+              let notify { Logger.section; msg } =
+                `String (Printf.sprintf "%s: %s" section msg)
+              in
+              let format_timing (k, v) = (k, `Int (int_of_float (0.5 +. v))) in
+              `Assoc
+                [ ("class", `String class_);
+                  ("value", message);
+                  ("notifications", `List (List.rev_map notify !notifications));
+                  ("timing", `Assoc (List.map format_timing timing));
+                  ("heap_mbytes", `Int heap_mbytes);
+                  ( "cache",
+                    match pipeline_opt with
+                    | None -> `Assoc [] (* TODO *)
+                    | Some pipeline -> Mpipeline.cache_information pipeline );
+                  ("query_num", `Int !query_num)
+                ]
+            in
+
+            log ~title:"run(result)" "%a" Logger.json (fun () -> json);
+            begin
+              match Mconfig.(config.merlin.protocol) with
+              | `Sexp -> Sexp.tell_sexp print_string (Sexp.of_json json)
+              | `Json -> Yojson.Basic.to_channel stdout json
+            end;
+            print_newline ();
+            Shared.signal shared.msg;
+            Shared.unlock shared.msg
+          end
+        with
+        | () -> 0
+        | exception exn ->
+          prerr_endline ("Exception: " ^ Printexc.to_string exn);
+          1))
 
 let with_wd ~wd ~old_wd f args =
   match Sys.chdir wd with
@@ -214,7 +214,7 @@ let with_wd ~wd ~old_wd f args =
       old_wd;
     f args
 
-let run ~new_env wd args shared =
+let run ~new_env wd shared args =
   begin
     match new_env with
     | Some env ->

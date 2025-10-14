@@ -5,6 +5,9 @@ val create : unit -> 'a t
 val put_ack : 'a t -> 'a -> unit
 val take : 'a t -> 'a
 val unsafe_get : 'a t -> 'a option
+val unsafe_put_ack : 'a t -> 'a -> unit
+val unsafe_take : 'a t -> 'a
+
 val protect : 'a t -> (unit -> 'b) -> 'b
 val signal : 'a t -> unit
 val wait : 'a t -> unit

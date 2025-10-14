@@ -298,9 +298,9 @@ let type_implementation config caught position shared parsetree =
         type_structure caught position shared env' parsetree
       in
       let partial_result = aux [] first_suffix in
+      perform (Internal_partial (partial_result, cache_stats));
       try
         begin
-          perform (Internal_partial (partial_result, cache_stats));
           let _, _, second_suffix =
             type_structure caught None shared nenv nparsetree
           in
@@ -370,9 +370,10 @@ let type_interface config caught position shared parsetree =
         type_signature caught position shared env' parsetree
       in
       let partial_result = aux [] first_suffix in
+      perform (Internal_partial (partial_result, cache_stats));
+
       try
         begin
-          perform (Internal_partial (partial_result, cache_stats));
           let _, _, second_suffix =
             type_signature caught None shared nenv nparsetree
           in

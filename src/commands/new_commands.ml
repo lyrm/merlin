@@ -102,11 +102,11 @@ let run ?position shared config source query =
     (fun () -> Query_json.dump query);
 
   (* Analyse : to get the priority on the mutex, the main domain set the waiting flag to true. *)
-  Atomic.set shared.waiting true;
+  (* Atomic.set shared.waiting true; *)
   let result =
-    Shared.protect shared.msg (fun () ->
-        Atomic.set shared.waiting false;
-        Query_commands.dispatch pipeline query)
+    (* Shared.protect shared.msg (fun () ->
+      Atomic.set shared.waiting false; *)
+    Query_commands.dispatch pipeline query
   in
   let json = Query_json.json_of_response query result in
   (json, Some pipeline)

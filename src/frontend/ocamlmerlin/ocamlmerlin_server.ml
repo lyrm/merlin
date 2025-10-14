@@ -5,7 +5,7 @@ module Server = struct
   let process_request { Os_ipc.wd; environ; argv; context = _ } shared =
     match Array.to_list argv with
     | "stop-server" :: _ -> raise Exit
-    | args -> New_merlin.run ~new_env:(Some environ) (Some wd) args shared
+    | args -> New_merlin.run ~new_env:(Some environ) (Some wd) shared args
 
   let process_client client shared =
     let context = client.Os_ipc.context in
@@ -73,7 +73,7 @@ let main () =
   | "single" :: args ->
     let shared = Domain_msg.create () in
     let domain_typer = Domain.spawn @@ Mpipeline.domain_typer shared in
-    let vexit = New_merlin.run ~new_env:None None args shared in
+    let vexit = New_merlin.run ~new_env:None None shared args in
     Mpipeline.close_typer shared;
     Domain.join domain_typer;
     exit vexit
