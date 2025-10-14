@@ -32,11 +32,11 @@ let time = ref 0.0
 
 let delta_time () = Sys.time () -. !time
 
-let destination = ref None
-let selected_sections = ref None
+let destination = Atomic.make None
+let selected_sections = Atomic.make None
 
 let is_section_enabled section =
-  match !selected_sections with
+  match Atomic.get selected_sections with
   | None -> true
   | Some sections -> Hashtbl.mem sections section
 
@@ -44,12 +44,12 @@ let output_section oc section title =
   Printf.fprintf oc "# %2.2f %s - %s\n" (delta_time ()) section title
 
 let log_flush () =
-  match !destination with
+  match Atomic.get destination with
   | None -> ()
   | Some oc -> flush oc
 
 let log ~section ~title fmt =
-  match !destination with
+  match Atomic.get destination with
   | Some oc when is_section_enabled section ->
     Printf.ksprintf
       (fun str ->
@@ -107,14 +107,14 @@ let with_sections sections f =
       List.iter sections ~f:(fun section -> Hashtbl.replace table section ());
       Some table
   in
-  let sections0 = !selected_sections in
-  selected_sections := sections;
+  let sections0 = Atomic.get selected_sections in
+  Atomic.set selected_sections sections;
   match f () with
   | result ->
-    selected_sections := sections0;
+    Atomic.set selected_sections sections0;
     result
   | exception exn ->
-    selected_sections := sections0;
+    Atomic.set selected_sections sections0;
     reraise exn
 
 let with_log_file file ?(sections = []) f =
@@ -134,11 +134,11 @@ let with_log_file file ?(sections = []) f =
           (None, ignore)
         | oc -> (Some oc, fun () -> close_out_noerr oc))
     in
-    let destination0 = !destination in
-    destination := destination';
+    let destination0 = Atomic.get destination in
+    Atomic.set destination destination';
     let release () =
       log_flush ();
-      destination := destination0;
+      Atomic.set destination destination0;
       release ()
     in
     match with_sections sections f with
