@@ -133,54 +133,48 @@ let type_structure caught position (shared : _ Domain_msg.t) env parsetree =
       Shared.protect shared.msg (fun () ->
           Shared.signal shared.msg;
           Shared.wait shared.msg);
-
-    Shared.lock shared.msg;
-    match Shared.unsafe_get shared.msg with
-    | Some (Msg `Closing) ->
-      Shared.unlock shared.msg;
-      raise Cancel_or_Closing
-    | Some (Msg `Cancel) ->
-      Shared.unlock shared.msg;
-      (* Cancel_struc is caught by type_interface, where the partial
+    let ((env, parsetree, items) as res) =
+      Shared.protect shared.msg (fun () ->
+          match Shared.unsafe_get shared.msg with
+          | Some (Msg `Closing) -> raise Cancel_or_Closing
+          | Some (Msg `Cancel) ->
+            (* Cancel_struc is caught by type_interface, where the partial
          result will be cached. *)
-      raise (Cancel_struc acc)
-    | Some (Config _) ->
-      Shared.unlock shared.msg;
-      failwith "Unexpected message in type_structure : config"
-    | Some (Result _) ->
-      Shared.unlock shared.msg;
-      failwith "Unexpected message in type_structure : result"
-    | Some (Msg (`Exn _)) ->
-      Shared.unlock shared.msg;
-      failwith "Unexpected message in type_structure : exn"
-    | None -> (
-      match parsetree with
-      | parsetree_item :: rest ->
-        let items, _, part_env =
-          Typemod.merlin_type_structure env [ parsetree_item ]
-        in
-        let typedtree_items =
-          (items.Typedtree.str_items, items.Typedtree.str_type)
-        in
-        let item =
-          { parsetree_item;
-            typedtree_items;
-            part_env;
-            part_snapshot = Btype.snapshot ();
-            part_stamp = Ident.get_currentstamp ();
-            part_uid = Shape.Uid.get_current_stamp ();
-            part_errors = !caught;
-            part_checks = !Typecore.delayed_checks;
-            part_warnings = Warnings.backup ()
-          }
-        in
-        Shared.unlock shared.msg;
-        if not (continue_typing parsetree_item) then
-          (part_env, rest, item :: acc)
-        else loop part_env rest (item :: acc)
-      | [] ->
-        Shared.unlock shared.msg;
-        (env, [], List.rev acc))
+            raise (Cancel_struc acc)
+          | Some (Config _) ->
+            failwith "Unexpected message in type_structure : config"
+          | Some (Result _) ->
+            failwith "Unexpected message in type_structure : result"
+          | Some (Msg (`Exn _)) ->
+            failwith "Unexpected message in type_structure : exn"
+          | None -> (
+            match parsetree with
+            | parsetree_item :: rest ->
+              let items, _, part_env =
+                Typemod.merlin_type_structure env [ parsetree_item ]
+              in
+              let typedtree_items =
+                (items.Typedtree.str_items, items.Typedtree.str_type)
+              in
+              let item =
+                { parsetree_item;
+                  typedtree_items;
+                  part_env;
+                  part_snapshot = Btype.snapshot ();
+                  part_stamp = Ident.get_currentstamp ();
+                  part_uid = Shape.Uid.get_current_stamp ();
+                  part_errors = !caught;
+                  part_checks = !Typecore.delayed_checks;
+                  part_warnings = Warnings.backup ()
+                }
+              in
+              (part_env, rest, item :: acc)
+            | [] -> (env, [], acc)))
+    in
+    match parsetree with
+    | [] -> (env, [], List.rev items)
+    | item :: _ ->
+      if not (continue_typing item) then res else loop env parsetree items
   in
   loop env parsetree []
 
@@ -196,51 +190,45 @@ let type_signature caught position (shared : _ Domain_msg.t) env parsetree =
       Shared.protect shared.msg (fun () ->
           Shared.signal shared.msg;
           Shared.wait shared.msg);
-
-    Shared.lock shared.msg;
-    match Shared.unsafe_get shared.msg with
-    | Some (Msg `Closing) ->
-      Shared.unlock shared.msg;
-      raise Cancel_or_Closing
-    | Some (Msg `Cancel) ->
-      Shared.unlock shared.msg;
-      (* Cancel_sig is caught by type_interface, where the partial
+    let ((env, parsetree, items) as res) =
+      Shared.protect shared.msg (fun () ->
+          match Shared.unsafe_get shared.msg with
+          | Some (Msg `Closing) -> raise Cancel_or_Closing
+          | Some (Msg `Cancel) ->
+            (* Cancel_sig is caught by type_interface, where the partial
          result will be cached. *)
-      raise (Cancel_sig acc)
-    | Some (Config _) ->
-      Shared.unlock shared.msg;
-      failwith "Unexpected message in type_signature : config"
-    | Some (Result _) ->
-      Shared.unlock shared.msg;
-      failwith "Unexpected message in type_signature : result"
-    | Some (Msg (`Exn _)) ->
-      Shared.unlock shared.msg;
-      failwith "Unexpected message in type_signature : exn"
-    | None -> (
-      match parsetree with
-      | parsetree_item :: rest ->
-        let { Typedtree.sig_final_env = part_env; sig_items; sig_type } =
-          Typemod.merlin_transl_signature env [ parsetree_item ]
-        in
-        let item =
-          { parsetree_item;
-            typedtree_items = (sig_items, sig_type);
-            part_env;
-            part_snapshot = Btype.snapshot ();
-            part_stamp = Ident.get_currentstamp ();
-            part_uid = Shape.Uid.get_current_stamp ();
-            part_errors = !caught;
-            part_checks = !Typecore.delayed_checks;
-            part_warnings = Warnings.backup ()
-          }
-        in
-        Shared.unlock shared.msg;
-        if not (continue_typing parsetree_item) then
-          (part_env, rest, item :: acc)
-        else loop part_env rest (item :: acc)
-      | [] ->
-        Shared.unlock shared.msg;
-        (env, [], List.rev acc))
+            raise (Cancel_sig acc)
+          | Some (Config _) ->
+            failwith "Unexpected message in type_signature : config"
+          | Some (Result _) ->
+            failwith "Unexpected message in type_signature : result"
+          | Some (Msg (`Exn _)) ->
+            failwith "Unexpected message in type_signature : exn"
+          | None -> (
+            match parsetree with
+            | parsetree_item :: rest ->
+              let { Typedtree.sig_final_env = part_env; sig_items; sig_type } =
+                Typemod.merlin_transl_signature env [ parsetree_item ]
+              in
+              let item =
+                { parsetree_item;
+                  typedtree_items = (sig_items, sig_type);
+                  part_env;
+                  part_snapshot = Btype.snapshot ();
+                  part_stamp = Ident.get_currentstamp ();
+                  part_uid = Shape.Uid.get_current_stamp ();
+                  part_errors = !caught;
+                  part_checks = !Typecore.delayed_checks;
+                  part_warnings = Warnings.backup ()
+                }
+              in
+              (part_env, rest, item :: acc)
+            | [] -> (env, [], List.rev acc)))
+    in
+    match parsetree with
+    | [] -> (env, [], List.rev items)
+    | item :: _ ->
+      if not (continue_typing item) then res else loop env parsetree items
   in
   loop env parsetree []
 
