@@ -4,15 +4,20 @@ let create () =
   { mutex = Mutex.create (); cond = Condition.create (); value = None }
 
 let put_ack t a =
-  Mutex.lock t.mutex;
+  Mutex.protect t.mutex @@ fun () ->
   assert (t.value = None);
-  t.value <- Some a;
+  let new_v = Some a in
+  t.value <- new_v;
+
   Condition.signal t.cond;
   Condition.wait t.cond t.mutex;
-  Mutex.unlock t.mutex
+
+  while t.value == new_v do
+    Condition.wait t.cond t.mutex
+  done
 
 let take t =
-  Mutex.lock t.mutex;
+  Mutex.protect t.mutex @@ fun () ->
   let rec loop () =
     match t.value with
     | None ->
@@ -23,32 +28,18 @@ let take t =
   let res = loop () in
   t.value <- None;
   Condition.signal t.cond;
-  Mutex.unlock t.mutex;
   res
 
-(* let[@inline] assert_mutex_locked ?fname t =
-  try
-    if Mutex.try_lock t.mutex then Mutex.unlock t.mutex;
-    (* Mutex was not locked *)
-    let m =
-      "Can only be used when the mutex is already locked"
-      ^
-      match fname with
-      | None -> ""
-      | Some f -> "(" ^ f ^ ")"
-    in
-    failwith m
-  with Sys_error s when s = "Mutex.lock: Resource deadlock avoided" -> () *)
-
 let unsafe_put_ack t a =
-  (* assert_mutex_locked ~fname:"unsafe_put_ack" t; *)
   assert (t.value = None);
-  t.value <- Some a;
+  let new_v = Some a in
+  t.value <- new_v;
   Condition.signal t.cond;
-  Condition.wait t.cond t.mutex
+  while t.value == new_v do
+    Condition.wait t.cond t.mutex
+  done
 
 let unsafe_take t =
-  (* assert_mutex_locked ~fname:"unsafe_take" t; *)
   let rec loop () =
     match t.value with
     | None ->
