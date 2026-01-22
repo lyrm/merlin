@@ -175,7 +175,8 @@ let type_structure caught position (shared : _ Domain_msg.t) env parsetree =
           }
         in
         Shared.unlock shared.msg;
-        if not (continue_typing parsetree_item) then (env, rest, item :: acc)
+        if not (continue_typing parsetree_item) then
+          (part_env, rest, item :: acc)
         else loop part_env rest (item :: acc)
       | [] ->
         Shared.unlock shared.msg;
@@ -234,7 +235,8 @@ let type_signature caught position (shared : _ Domain_msg.t) env parsetree =
           }
         in
         Shared.unlock shared.msg;
-        if not (continue_typing parsetree_item) then (env, rest, item :: acc)
+        if not (continue_typing parsetree_item) then
+          (part_env, rest, item :: acc)
         else loop part_env rest (item :: acc)
       | [] ->
         Shared.unlock shared.msg;
