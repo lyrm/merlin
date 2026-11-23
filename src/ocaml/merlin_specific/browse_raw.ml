@@ -277,33 +277,35 @@ let node_merlin_loc loc0 node =
 
 let app node env f acc = f (node_update_env env node) node acc
 
-type 'a f0 = Env.t -> node -> 'a -> 'a
-type ('b, 'a) f1 = 'b -> Env.t -> 'a f0 -> 'a -> 'a
+type 'a updater = Env.t -> node -> 'a -> 'a
+type 'acc folder = Env.t -> 'acc updater -> 'acc -> 'acc
+type ('foldable, 'acc) folder_generator = 'foldable -> 'acc folder
 
-let id_fold _env (_f : _ f0) acc = acc
+let id_fold _env (_f : _ updater) acc = acc
 
-let ( ** ) f1 f2 env (f : _ f0) acc = f2 env f (f1 env f acc)
+let ( ** ) (f1 : _ folder) (f2 : _ folder) env (f : _ updater) acc =
+  f2 env f (f1 env f acc)
 
-let rec list_fold (f' : _ f1) xs env f acc =
+let rec list_fold (f' : _ folder_generator) xs env f acc =
   match xs with
   | x :: xs -> list_fold f' xs env f (f' x env f acc)
   | [] -> acc
 
-let array_fold (f' : _ f1) arr env f acc =
+let array_fold (f' : _ folder_generator) arr env f acc =
   let acc = ref acc in
   for i = 0 to Array.length arr - 1 do
     acc := f' arr.(i) env f !acc
   done;
   !acc
 
-let rec list_fold_with_next (f' : _ -> _ f1) xs env f acc =
+let rec list_fold_with_next (f' : _ -> _ folder_generator) xs env f acc =
   match xs with
   | x :: (y :: _ as xs) ->
     list_fold_with_next f' xs env f (f' (Some y) x env f acc)
   | [ x ] -> f' None x env f acc
   | [] -> acc
 
-let option_fold f' o env (f : _ f0) acc =
+let option_fold f' o env (f : _ updater) acc =
   match o with
   | None -> acc
   | Some x -> f' x env f acc
@@ -339,7 +341,7 @@ let of_constructor_arguments = function
 let of_bop ({ bop_exp; _ } as bop) =
   app (Binding_op bop) ** of_expression bop_exp
 
-let of_record_field obj loc lbl env (f : _ f0) acc =
+let of_record_field obj loc lbl env (f : _ updater) acc =
   app (Record_field (obj, lbl, loc)) env f acc
 
 let of_exp_record_field obj lid_loc lbl =
@@ -383,10 +385,9 @@ let of_pattern_desc (type k) (desc : k pattern_desc) =
       ls
   | Tpat_or (p1, p2, _) -> of_pattern p1 ** of_pattern p2
 
-let of_method_call obj meth loc env (f : _ f0) acc =
+let of_method_call obj meth loc env (f : _ updater) acc =
   let loc_start = obj.exp_loc.Location.loc_end in
-  let loc_end = loc.Location.loc_end in
-  let loc = { loc with Location.loc_start; loc_end } in
+  let loc = { loc with Location.loc_start } in
   app (Method_call (obj, meth, loc)) env f acc
 
 let rec of_expression_desc loc = function
