@@ -1,6 +1,6 @@
 open Std
-open Parsetree
-open Parsebrowse_raw
+open! Parsetree
+open! Parsebrowse_raw
 
 type node = Parsebrowse_raw.node
 type t = node list
@@ -147,3 +147,8 @@ let range_enclosing ~start ~stop roots =
       and b = Lexing.compare_pos stop nend in
       a >= 0 && b <= 0)
     (enclosing start roots)
+
+(* WE ARE HERE *)
+let of_parsetree = function
+  | `Implementation str -> of_structure str
+  | `Interface sg -> of_signature sg

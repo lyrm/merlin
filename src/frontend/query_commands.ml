@@ -289,14 +289,14 @@ let dispatch pipeline (type a) : a Query_protocol.t -> a = function
             ret (`String printed_type)
           else ret (`Index i))
   | Enclosing (pos, stop) ->
-    let typer = Mpipeline.typer_result pipeline in
-    let structures = Mbrowse.of_typedtree (Mtyper.get_typedtree typer) in
+    let reader = Mpipeline.reader_parsetree pipeline in
+    let structures = Pmbrowse.of_parsetree reader in
     let pos = Mpipeline.get_lexing_pos pipeline pos in
     let stop = Option.map ~f:(Mpipeline.get_lexing_pos pipeline) stop in
     let mbrowse =
       match stop with
-      | Some stop -> Mbrowse.range_enclosing ~start:pos ~stop [ structures ]
-      | None -> Mbrowse.enclosing pos [ structures ]
+      | Some stop -> Pmbrowse.range_enclosing ~start:pos ~stop [ structures ]
+      | None -> Pmbrowse.enclosing pos [ structures ]
     in
     let range =
       let loc_end = Option.value ~default:pos stop in

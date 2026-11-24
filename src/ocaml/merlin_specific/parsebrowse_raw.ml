@@ -116,67 +116,6 @@ let node_real_loc loc0 = function
   | Type_kind _
   | Dummy -> loc0
 
-let node_attributes = function
-  | Expression exp -> exp.pexp_attributes
-  | Pattern pat -> pat.ppat_attributes
-  | Class_expr cl -> cl.pcl_attributes
-  | Class_field cf -> cf.pcf_attributes
-  | Module_expr me -> me.pmod_attributes
-  | Structure_item { pstr_desc = Pstr_eval (_, attr); _ } -> attr
-  | Structure_item { pstr_desc = Pstr_attribute a; _ } -> [ a ]
-  | Signature_item { psig_desc = Psig_attribute a; _ } -> [ a ]
-  | Module_binding mb -> mb.pmb_attributes
-  | Value_binding vb -> vb.pvb_attributes
-  | Module_type mt -> mt.pmty_attributes
-  | Module_declaration md -> md.pmd_attributes
-  | Module_type_declaration mtd -> mtd.pmtd_attributes
-  | Open_description o -> o.popen_attributes
-  | Include_declaration i -> i.pincl_attributes
-  | Include_description i -> i.pincl_attributes
-  | Core_type ct -> ct.ptyp_attributes
-  | Row_field rf -> rf.prf_attributes
-  | Value_description vd -> vd.pval_attributes
-  | Type_declaration td -> td.ptype_attributes
-  | Label_declaration ld -> ld.pld_attributes
-  | Constructor_declaration cd -> cd.pcd_attributes
-  | Type_extension te -> te.ptyext_attributes
-  | Extension_constructor ec -> ec.pext_attributes
-  | Class_type ct -> ct.pcty_attributes
-  | Class_type_field ctf -> ctf.pctf_attributes
-  | Class_declaration ci -> ci.pci_attributes
-  | Class_description ci -> ci.pci_attributes
-  | Class_type_declaration ci -> ci.pci_attributes
-  | Method_call (obj, _) -> obj.pexp_attributes
-  | Record_field (`Expression obj, _) -> obj.pexp_attributes
-  | Record_field (`Pattern obj, _) -> obj.ppat_attributes
-  | _ -> []
-
-let has_attr ~name node =
-  let attrs = node_attributes node in
-  List.exists
-    ~f:(fun a ->
-      let str, _ = Ast_helper.Attr.as_tuple a in
-      str.Location.txt = name)
-    attrs
-
-let node_merlin_loc loc0 node =
-  let attributes = node_attributes node in
-  let relaxed_loc loc attributes =
-    let open Parsetree in
-    let pred { attr_name = loc; _ } = Location_aux.is_relaxed_location loc in
-    match List.find attributes ~f:pred with
-    | { attr_name; _ } -> attr_name.Location.loc
-    | exception Not_found -> loc
-  in
-  let loc = relaxed_loc (node_real_loc loc0 node) attributes in
-  let extra_loc loc extra =
-    List.fold_left ~f:Location_aux.union ~init:loc extra
-  in
-  match node with
-  | Expression { pexp_loc_stack; _ } -> extra_loc loc pexp_loc_stack
-  | Pattern { ppat_loc_stack; _ } -> extra_loc loc ppat_loc_stack
-  | _ -> loc
-
 let app node f acc = f node acc
 
 type 'a updater = node -> 'a -> 'a
