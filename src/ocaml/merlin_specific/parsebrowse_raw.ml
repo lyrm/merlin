@@ -53,7 +53,7 @@ type node =
   | Class_type_declaration_name of class_type_declaration
   | Class_description_name of class_description
   | Class_field_name of class_field
-  | Exp_new_class_name of Longident.t Location.loc * Types.class_declaration
+  | Exp_new_class_name of Longident.t Location.loc
   | Extension of extension
 
 [@@@ocaml.warning "-9"]
@@ -91,7 +91,7 @@ let node_real_loc loc0 = function
   | Class_description_name { pci_name = { loc } }
   | Class_field_name
       { pcf_desc = Pcf_val ({ loc }, _, _) | Pcf_method ({ loc }, _, _) }
-  | Exp_new_class_name ({ loc }, _)
+  | Exp_new_class_name { loc }
   | Extension_constructor { pext_loc = loc }
   | Include_description { pincl_loc = loc }
   | Include_declaration { pincl_loc = loc }
@@ -250,13 +250,24 @@ let of_pattern_desc (desc : pattern_desc) =
   | Ppat_extension e -> of_extension e
   | Ppat_open (_, p) -> of_pattern p
 
-let rec of_expression_desc loc = function
+let rec of_function_param fp = of_function_param_kind fp.fp_kind
+
+and of_function_param_kind = function
+  | Pparam_pat pat -> of_pattern pat
+  | Pparam_optional_default (pat, exp) -> of_pattern pat ** of_expression exp
+
+and of_function_body = function
+  | Pfunction_body exp -> of_expression exp
+  | Pfunction_cases fc -> list_fold of_case fc.cases
+
+and of_expression_desc loc = function
   | Pexp_ident _ | Pexp_constant _ | Pexp_variant (_, None) -> id_fold
   | Pexp_extension ({ txt }, PStr []) when String.equal txt Ast_helper.hole_txt
-    -> id_fold
-  | Pexp_new (_, lid, decl) -> app (Exp_new_class_name (lid, decl))
+    -> id_fold (* TODO: do we want a "hole" node? *)
+  | Pexp_new lid -> app (Exp_new_class_name lid)
   | Pexp_let (_, vbs, e) -> of_expression e ** list_fold of_value_binding vbs
-  | Pexp_function (params, body) ->
+  | Pexp_function (params, _, body) ->
+    (* TODO: type constraints, what is it? *)
     list_fold of_function_param params ** of_function_body body
   | Pexp_apply (e, ls) ->
     of_expression e
